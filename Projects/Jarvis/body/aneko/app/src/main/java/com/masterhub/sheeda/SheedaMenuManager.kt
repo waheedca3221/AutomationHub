@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.net.Uri
-import android.speech.RecognizerIntent
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -14,19 +13,19 @@ import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Locale
 
 class SheedaMenuManager(
     private val context: Context,
     private val windowManager: WindowManager,
     private val client: JarvisTailnetClient,
-    private val onBubbleMessage: (String) -> Unit,
-    private val onStateChange: (SheedaState) -> Unit
+    private val onBubbleMessage: (String, Boolean) -> Unit,
+    private val onStateChange: (SheedaState) -> Unit,
+    private val onTalkRequested: () -> Unit
 ) {
     private var menuView: View? = null
     private var isMenuShowing = false
-    private var isMuted = false
+    var isMuted = false
+        private set
 
     fun toggleMenu(petX: Int, petY: Int) {
         if (isMenuShowing) {
@@ -46,11 +45,10 @@ class SheedaMenuManager(
         val tvInbox = view.findViewById<TextView>(R.id.btn_menu_inbox)
         val tvMute = view.findViewById<TextView>(R.id.btn_menu_mute)
 
-        // 1. Talk: Hands off to Kai 9000 assist intent or SpeechRecognizer
+        // 1. Talk: Direct speech recognition and round-trip dialogue
         view.findViewById<View>(R.id.btn_menu_talk).setOnClickListener {
             dismissMenu()
-            onStateChange(SheedaState.LISTENING)
-            launchKaiOrSpeechRecognizer()
+            onTalkRequested()
         }
 
         // 2. Today's Brief
@@ -59,8 +57,7 @@ class SheedaMenuManager(
             onStateChange(SheedaState.THINKING)
             CoroutineScope(Dispatchers.Main).launch {
                 val brief = client.getCircadianBrief().getOrDefault("Circadian brief unavailable.")
-                onStateChange(SheedaState.SPEAKING)
-                onBubbleMessage(brief)
+                onBubbleMessage(brief, false)
             }
         }
 
@@ -69,7 +66,7 @@ class SheedaMenuManager(
             dismissMenu()
             CoroutineScope(Dispatchers.Main).launch {
                 val count = client.getInboxCount()
-                onBubbleMessage("Inbox: $count routine items waiting in vault.")
+                onBubbleMessage("Inbox: $count routine items waiting in vault.", false)
             }
         }
 
@@ -77,11 +74,12 @@ class SheedaMenuManager(
         view.findViewById<View>(R.id.btn_menu_queue).setOnClickListener {
             dismissMenu()
             onStateChange(SheedaState.THINKING)
-            onBubbleMessage("Listening for task to queue...")
-            launchKaiOrSpeechRecognizer()
+            onBubbleMessage("Listening for task to queue...", false)
+            onTalkRequested()
         }
 
         // 5. Mute Audio
+        tvMute.text = if (isMuted) "Unmute Audio" else "Mute Audio"
         tvMute.setOnClickListener {
             isMuted = !isMuted
             tvMute.text = if (isMuted) "Unmute Audio" else "Mute Audio"
@@ -117,7 +115,6 @@ class SheedaMenuManager(
         }
 
         view.setOnTouchListener { _, _ ->
-            // Outside touch will be detected
             false
         }
 
@@ -134,30 +131,6 @@ class SheedaMenuManager(
             }
             menuView = null
             isMenuShowing = false
-        }
-    }
-
-    private fun launchKaiOrSpeechRecognizer() {
-        try {
-            // First attempt Kai 9000 Assist Intent
-            val kaiIntent = Intent(Intent.ACTION_ASSIST).apply {
-                setPackage("com.masterhub.kai")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(kaiIntent)
-        } catch (e: Exception) {
-            // Fallback: Standard Android SpeechRecognizer
-            try {
-                val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Sheeda (Jarvis :8777)...")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(speechIntent)
-            } catch (ex: Exception) {
-                onBubbleMessage("Voice assistant active on http://100.72.183.79:8777")
-            }
         }
     }
 }

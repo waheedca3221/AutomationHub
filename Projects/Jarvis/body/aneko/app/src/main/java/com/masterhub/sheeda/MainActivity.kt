@@ -1,12 +1,14 @@
 package com.masterhub.sheeda
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -21,11 +23,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
     private lateinit var tvTailnet: TextView
+    private lateinit var tvVoiceEngine: TextView
     private lateinit var btnToggle: Button
     private lateinit var btnOverlayPerm: Button
     private lateinit var btnMicPerm: Button
+    private lateinit var btnTestVoice: Button
 
     private lateinit var client: JarvisTailnetClient
+    private var testAudioPlayer: SheedaAudioPlayer? = null
     private var isServiceRunning = false
 
     private val micPermissionLauncher = registerForActivityResult(
@@ -47,9 +52,18 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tv_service_status)
         tvTailnet = findViewById(R.id.tv_tailnet_status)
+        tvVoiceEngine = findViewById(R.id.tv_voice_engine_status)
         btnToggle = findViewById(R.id.btn_toggle_sheeda)
         btnOverlayPerm = findViewById(R.id.btn_overlay_perm)
         btnMicPerm = findViewById(R.id.btn_mic_perm)
+        btnTestVoice = findViewById(R.id.btn_test_voice)
+
+        testAudioPlayer = SheedaAudioPlayer(
+            context = this,
+            client = client,
+            onSpeechStateChanged = {},
+            onSentenceSpoken = {}
+        )
 
         btnOverlayPerm.setOnClickListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
@@ -69,6 +83,14 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Microphone permission is already granted!", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        btnTestVoice.setOnClickListener {
+            Toast.makeText(this, "Playing test audio...", Toast.LENGTH_SHORT).show()
+            testAudioPlayer?.speakText(
+                "Good evening Waheed. Sheeda speaks aloud on your phone.",
+                isUserTalk = true
+            )
         }
 
         btnToggle.setOnClickListener {
@@ -95,6 +117,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        inspectTtsEngines()
         checkTailnetHealth()
     }
 
@@ -114,6 +137,23 @@ class MainActivity : AppCompatActivity() {
         btnMicPerm.isEnabled = !hasMic
     }
 
+    private fun inspectTtsEngines() {
+        try {
+            val tempTts = TextToSpeech(this, null)
+            val engines = tempTts.engines
+            var detected = "Default Android TTS (Google)"
+            for (eng in engines) {
+                val nameLower = eng.name.lowercase()
+                if (nameLower.contains("sherpa") || nameLower.contains("kokoro") || nameLower.contains("k2fsa")) {
+                    detected = "Sherpa-ONNX / Kokoro (${eng.label})"
+                    break
+                }
+            }
+            tvVoiceEngine.text = "Voice: PC Edge-TTS -> Fallback: $detected"
+            tempTts.shutdown()
+        } catch (_: Exception) {}
+    }
+
     private fun checkTailnetHealth() {
         CoroutineScope(Dispatchers.Main).launch {
             val result = client.getHealthStatus()
@@ -124,5 +164,10 @@ class MainActivity : AppCompatActivity() {
                 tvTailnet.text = "Brain: ${client.baseServerUrl} (Tailscale verification pending)"
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        testAudioPlayer?.release()
     }
 }

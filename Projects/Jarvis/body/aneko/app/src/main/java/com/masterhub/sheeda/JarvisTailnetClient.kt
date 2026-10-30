@@ -7,23 +7,29 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class JarvisTailnetClient(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
     // Dynamic Tailnet discovery with fallback
     var baseServerUrl: String = resolveTailnetEndpoint()
 
     fun resolveTailnetEndpoint(): String {
-        // Checks SharedPreferences override or net_identity tailnet host (default workstation 100.72.183.79:8777)
         val prefs = context.getSharedPreferences("sheeda_config", Context.MODE_PRIVATE)
         return prefs.getString("jarvis_url", "http://100.72.183.79:8777") ?: "http://100.72.183.79:8777"
+    }
+
+    fun getTtsUrl(text: String): String {
+        val encoded = URLEncoder.encode(text, "UTF-8")
+        return "$baseServerUrl/api/tts?text=$encoded&fmt=mp3"
     }
 
     suspend fun getHealthStatus(): Result<JSONObject> = withContext(Dispatchers.IO) {
@@ -71,6 +77,41 @@ class JarvisTailnetClient(private val context: Context) {
             }
         } catch (e: Exception) {
             0
+        }
+    }
+
+    suspend fun sendChatCompletion(queryText: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val bodyJson = JSONObject().apply {
+                put("model", "jarvis")
+                val messages = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", queryText)
+                    })
+                }
+                put("messages", messages)
+            }
+            val reqBody = bodyJson.toString().toRequestBody("application/json".toMediaType())
+            val req = Request.Builder().url("$baseServerUrl/v1/chat/completions").post(reqBody).build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val json = JSONObject(resp.body?.string() ?: "{}")
+                    val choices = json.optJSONArray("choices")
+                    val firstChoice = choices?.optJSONObject(0)
+                    val message = firstChoice?.optJSONObject("message")
+                    val content = message?.optString("content", "") ?: ""
+                    if (content.isNotBlank()) {
+                        Result.success(content)
+                    } else {
+                        sendVoiceTurn(queryText)
+                    }
+                } else {
+                    sendVoiceTurn(queryText)
+                }
+            }
+        } catch (e: Exception) {
+            sendVoiceTurn(queryText)
         }
     }
 

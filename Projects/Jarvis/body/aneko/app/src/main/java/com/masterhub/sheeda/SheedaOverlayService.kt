@@ -1,5 +1,6 @@
 package com.masterhub.sheeda
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,11 +8,19 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -20,9 +29,18 @@ import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 class SheedaOverlayService : Service() {
+
+    companion object {
+        private const val TAG = "SheedaOverlay"
+    }
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: View
@@ -31,18 +49,33 @@ class SheedaOverlayService : Service() {
 
     private lateinit var client: JarvisTailnetClient
     private lateinit var menuManager: SheedaMenuManager
+    private lateinit var audioPlayer: SheedaAudioPlayer
+
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
+    private var speechEndTime = 0L
 
     private var currentState = SheedaState.IDLE
     private var currentFrameIdx = 0
     private val handler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
 
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var isDragging = false
+    private var hasLongClicked = false
 
     private lateinit var windowParams: WindowManager.LayoutParams
+
+    private val longPressRunnable = Runnable {
+        if (!isDragging) {
+            hasLongClicked = true
+            vibrateFeedback()
+            menuManager.showMenu(windowParams.x, windowParams.y)
+        }
+    }
 
     private val animationRunnable = object : Runnable {
         override fun run() {
@@ -59,12 +92,32 @@ class SheedaOverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         client = JarvisTailnetClient(this)
 
+        audioPlayer = SheedaAudioPlayer(
+            context = this,
+            client = client,
+            onSpeechStateChanged = { speaking ->
+                if (speaking) {
+                    setState(SheedaState.SPEAKING)
+                } else {
+                    if (currentState == SheedaState.SPEAKING) {
+                        setState(SheedaState.IDLE)
+                    }
+                }
+            },
+            onSentenceSpoken = { sentence ->
+                tvBubble.text = sentence
+            }
+        )
+
         menuManager = SheedaMenuManager(
             context = this,
             windowManager = windowManager,
             client = client,
-            onBubbleMessage = { msg -> showSpeechBubble(msg) },
-            onStateChange = { newState -> setState(newState) }
+            onBubbleMessage = { msg, isUserTalk ->
+                showSpeechBubble(msg, isUserTalk = isUserTalk)
+            },
+            onStateChange = { newState -> setState(newState) },
+            onTalkRequested = { startSpeechListening() }
         )
 
         initOverlayView()
@@ -93,7 +146,7 @@ class SheedaOverlayService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Sheeda is Active")
-            .setContentText("Orange tabby companion running over apps • Tap to configure")
+            .setContentText("Tap cat to Talk aloud • Long-press for menu")
             .setSmallIcon(R.drawable.sheeda_stand_0)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -128,13 +181,16 @@ class SheedaOverlayService : Service() {
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     isDragging = false
+                    hasLongClicked = false
+                    handler.postDelayed(longPressRunnable, 500)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt()
                     val dy = (event.rawY - initialTouchY).toInt()
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                    if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
                         isDragging = true
+                        handler.removeCallbacks(longPressRunnable)
                         setState(SheedaState.DRAG)
                         windowParams.x = initialX + dx
                         windowParams.y = initialY + dy
@@ -143,13 +199,22 @@ class SheedaOverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    handler.removeCallbacks(longPressRunnable)
                     if (isDragging) {
                         setState(SheedaState.ONFLOOR)
                         handler.postDelayed({ setState(SheedaState.IDLE) }, 1000)
-                    } else {
-                        // Clean Tap: toggle floating menu
-                        menuManager.toggleMenu(windowParams.x, windowParams.y)
+                    } else if (!hasLongClicked) {
+                        // CLEAN TAP = TALK (start listening immediately)
+                        // Barge-in: stop any audio playback immediately
+                        if (audioPlayer.isSpeaking) {
+                            audioPlayer.stop()
+                        }
+                        startSpeechListening()
                     }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPressRunnable)
                     true
                 }
                 else -> false
@@ -157,6 +222,138 @@ class SheedaOverlayService : Service() {
         }
 
         windowManager.addView(overlayView, windowParams)
+    }
+
+    private fun vibrateFeedback() {
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(45, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(45)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun startSpeechListening() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            showSpeechBubble("Microphone permission required! Open app.", durationMs = 3000, skipAudio = true)
+            return
+        }
+
+        if (isListening) {
+            stopSpeechListening()
+        }
+
+        audioPlayer.stop()
+        setState(SheedaState.LISTENING)
+        showSpeechBubble("Listening...", durationMs = 10000, skipAudio = true)
+
+        try {
+            speechRecognizer?.destroy()
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        isListening = true
+                        setState(SheedaState.LISTENING)
+                    }
+
+                    override fun onBeginningOfSpeech() {
+                        setState(SheedaState.LISTENING)
+                    }
+
+                    override fun onRmsChanged(rmsdB: Float) {}
+
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+
+                    override fun onEndOfSpeech() {
+                        isListening = false
+                        speechEndTime = System.currentTimeMillis()
+                        setState(SheedaState.THINKING)
+                        showSpeechBubble("Thinking...", durationMs = 12000, skipAudio = true)
+                    }
+
+                    override fun onError(error: Int) {
+                        isListening = false
+                        Log.w(TAG, "SpeechRecognizer error: $error")
+                        handler.post {
+                            if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                                hideSpeechBubble()
+                                setState(SheedaState.IDLE)
+                            } else {
+                                showSpeechBubble("Speech error ($error)", durationMs = 2500, skipAudio = true)
+                                handler.postDelayed({ setState(SheedaState.IDLE) }, 2500)
+                            }
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        isListening = false
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val spokenQuery = matches?.firstOrNull()?.trim() ?: ""
+
+                        if (spokenQuery.isNotBlank()) {
+                            showSpeechBubble(spokenQuery, durationMs = 12000, skipAudio = true)
+                            handleUserVoiceTurn(spokenQuery)
+                        } else {
+                            hideSpeechBubble()
+                            setState(SheedaState.IDLE)
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val partial = matches?.firstOrNull()?.trim()
+                        if (!partial.isNullOrBlank()) {
+                            tvBubble.text = partial
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_ADDITIONAL_LANGUAGES, arrayOf("ur-PK", "ur", "en-PK"))
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
+
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start speech recognition: $e")
+            showSpeechBubble("Speech recognition unavailable", durationMs = 3000, skipAudio = true)
+            setState(SheedaState.IDLE)
+        }
+    }
+
+    private fun stopSpeechListening() {
+        isListening = false
+        try {
+            speechRecognizer?.stopListening()
+            speechRecognizer?.destroy()
+        } catch (_: Exception) {}
+        speechRecognizer = null
+    }
+
+    private fun handleUserVoiceTurn(userText: String) {
+        setState(SheedaState.THINKING)
+        serviceScope.launch {
+            val result = client.sendChatCompletion(userText)
+            val reply = result.getOrElse {
+                "Meow! Could not connect to Jarvis brain on tailnet."
+            }
+
+            val latencyMs = System.currentTimeMillis() - speechEndTime
+            Log.i(TAG, "End of speech to reply received: ${latencyMs}ms | Reply: $reply")
+
+            // User's own talk is ALWAYS spoken aloud (bypasses quiet hours)
+            showSpeechBubble(reply, durationMs = 6000, isUserTalk = true)
+        }
     }
 
     private fun advanceAnimationFrame() {
@@ -178,11 +375,20 @@ class SheedaOverlayService : Service() {
         }
     }
 
-    private fun checkQuietHoursState() {
+    fun isQuietHours(): Boolean {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        // Quiet hours: 23:00 to 06:30 -> automatically curl up to sleep
-        if (hour >= 23 || hour < 6) {
-            if (currentState != SheedaState.SLEEP && currentState != SheedaState.DRAG) {
+        return hour >= 23 || hour < 6
+    }
+
+    private fun checkQuietHoursState() {
+        // Quiet hours: 23:00 to 06:00 -> auto curl up to sleep unless actively speaking/listening/dragging
+        if (isQuietHours()) {
+            if (currentState != SheedaState.SLEEP &&
+                currentState != SheedaState.DRAG &&
+                currentState != SheedaState.SPEAKING &&
+                currentState != SheedaState.LISTENING &&
+                currentState != SheedaState.THINKING
+            ) {
                 setState(SheedaState.SLEEP)
             }
         } else if (currentState == SheedaState.SLEEP) {
@@ -190,19 +396,42 @@ class SheedaOverlayService : Service() {
         }
     }
 
-    fun showSpeechBubble(text: String, durationMs: Long = 4000) {
+    fun showSpeechBubble(
+        text: String,
+        durationMs: Long = 5000,
+        isUserTalk: Boolean = false,
+        skipAudio: Boolean = false
+    ) {
         tvBubble.text = text
         tvBubble.visibility = View.VISIBLE
         handler.removeCallbacksAndMessages(tvBubble)
+
+        if (!skipAudio && !menuManager.isMuted) {
+            audioPlayer.speakText(
+                text = text,
+                isUserTalk = isUserTalk,
+                isQuietHours = isQuietHours()
+            )
+        }
+
         handler.postDelayed({
-            tvBubble.visibility = View.GONE
-            setState(SheedaState.IDLE)
+            hideSpeechBubble()
+            if (currentState == SheedaState.SPEAKING || currentState == SheedaState.THINKING) {
+                setState(SheedaState.IDLE)
+            }
         }, durationMs)
+    }
+
+    fun hideSpeechBubble() {
+        tvBubble.visibility = View.GONE
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(animationRunnable)
+        handler.removeCallbacks(longPressRunnable)
+        stopSpeechListening()
+        audioPlayer.release()
         menuManager.dismissMenu()
         if (::overlayView.isInitialized) {
             windowManager.removeView(overlayView)
