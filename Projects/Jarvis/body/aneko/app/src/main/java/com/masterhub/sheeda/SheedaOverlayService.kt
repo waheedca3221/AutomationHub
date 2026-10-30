@@ -105,7 +105,16 @@ class SheedaOverlayService : Service() {
         override fun run() {
             checkQuietHoursState()
             advanceAnimationFrame()
-            handler.postDelayed(this, 180)
+            val delayMs = when (currentState) {
+                SheedaState.IDLE -> 480L
+                SheedaState.SLEEP -> 500L
+                SheedaState.SPEAKING -> 140L
+                SheedaState.LISTENING, SheedaState.THINKING -> 200L
+                SheedaState.WALK_LEFT, SheedaState.WALK_RIGHT -> 160L
+                SheedaState.SCRATCH, SheedaState.CLEAN, SheedaState.WINK, SheedaState.POINT -> 220L
+                else -> 200L
+            }
+            handler.postDelayed(this, delayMs)
         }
     }
 
@@ -294,13 +303,13 @@ class SheedaOverlayService : Service() {
                     initialTouchY = event.rawY
                     isDragging = false
                     hasLongClicked = false
-                    handler.postDelayed(longPressRunnable, 500)
+                    handler.postDelayed(longPressRunnable, 450)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt()
                     val dy = (event.rawY - initialTouchY).toInt()
-                    if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
+                    if (Math.abs(dx) > 36 || Math.abs(dy) > 36) {
                         isDragging = true
                         handler.removeCallbacks(longPressRunnable)
                         setState(SheedaState.DRAG)
@@ -316,12 +325,9 @@ class SheedaOverlayService : Service() {
                         setState(SheedaState.ONFLOOR)
                         handler.postDelayed({ setState(SheedaState.IDLE) }, 1000)
                     } else if (!hasLongClicked) {
-                        // CLEAN TAP = TALK (start listening immediately)
-                        // Barge-in: stop any audio playback immediately
-                        if (audioPlayer.isSpeaking) {
-                            audioPlayer.stop()
-                        }
-                        startSpeechListening()
+                        // CLEAN TAP: Directly toggle/open Glass Action Menu!
+                        vibrateFeedback()
+                        menuManager.showMenu(windowParams.x, windowParams.y)
                     }
                     true
                 }
@@ -482,10 +488,36 @@ class SheedaOverlayService : Service() {
         }
     }
 
+    private var idleBreathCount = 0
+
     private fun advanceAnimationFrame() {
         val frames = SheedaSkin.getFramesForState(currentState)
         if (frames.isNotEmpty()) {
-            currentFrameIdx = (currentFrameIdx + 1) % frames.size
+            val nextIdx = currentFrameIdx + 1
+            if (nextIdx >= frames.size) {
+                // Completed one full loop
+                currentFrameIdx = 0
+                if (currentState in listOf(SheedaState.SCRATCH, SheedaState.CLEAN, SheedaState.WINK, SheedaState.POINT)) {
+                    setState(SheedaState.IDLE)
+                    return
+                } else if (currentState == SheedaState.IDLE) {
+                    idleBreathCount++
+                    // Every 7 breathing cycles (~20 seconds), perform an autonomous feline gesture!
+                    if (idleBreathCount >= 7) {
+                        idleBreathCount = 0
+                        val autonomousTricks = listOf(
+                            SheedaState.WINK,
+                            SheedaState.SCRATCH,
+                            SheedaState.CLEAN,
+                            SheedaState.POINT
+                        )
+                        setState(autonomousTricks.random())
+                        return
+                    }
+                }
+            } else {
+                currentFrameIdx = nextIdx
+            }
             ivSheeda.setImageResource(frames[currentFrameIdx])
         }
     }

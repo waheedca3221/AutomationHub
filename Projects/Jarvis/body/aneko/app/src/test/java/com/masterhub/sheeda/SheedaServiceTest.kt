@@ -44,6 +44,21 @@ class SheedaServiceTest {
     }
 
     @Test
+    fun testFelineTrickStatesHaveFrames() {
+        val scratchFrames = SheedaSkin.getFramesForState(SheedaState.SCRATCH)
+        assertEquals("Scratch state must have 4 frames", 4, scratchFrames.size)
+
+        val cleanFrames = SheedaSkin.getFramesForState(SheedaState.CLEAN)
+        assertEquals("Clean state must have 4 frames", 4, cleanFrames.size)
+
+        val winkFrames = SheedaSkin.getFramesForState(SheedaState.WINK)
+        assertEquals("Wink state must have 4 frames", 4, winkFrames.size)
+
+        val pointFrames = SheedaSkin.getFramesForState(SheedaState.POINT)
+        assertEquals("Point state must have 4 frames", 4, pointFrames.size)
+    }
+
+    @Test
     fun testVoiceTurnPayloadStructure() {
         val bodyJson = JSONObject().apply {
             put("text", "Check daily bank flow status")

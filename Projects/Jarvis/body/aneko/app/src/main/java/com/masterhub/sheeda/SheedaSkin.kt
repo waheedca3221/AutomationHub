@@ -11,7 +11,11 @@ enum class SheedaState {
     WALK_RIGHT,
     DRAG,
     FALL,
-    ONFLOOR
+    ONFLOOR,
+    SCRATCH,
+    CLEAN,
+    WINK,
+    POINT
 }
 
 object SheedaSkin {
@@ -74,6 +78,34 @@ object SheedaSkin {
         R.drawable.sheeda_rightwalk_3
     )
 
+    val scratchFrames = intArrayOf(
+        R.drawable.sheeda_scratch_0,
+        R.drawable.sheeda_scratch_1,
+        R.drawable.sheeda_scratch_2,
+        R.drawable.sheeda_scratch_3
+    )
+
+    val cleanFrames = intArrayOf(
+        R.drawable.sheeda_clean_0,
+        R.drawable.sheeda_clean_1,
+        R.drawable.sheeda_clean_2,
+        R.drawable.sheeda_clean_3
+    )
+
+    val winkFrames = intArrayOf(
+        R.drawable.sheeda_wink_0,
+        R.drawable.sheeda_wink_1,
+        R.drawable.sheeda_wink_2,
+        R.drawable.sheeda_wink_3
+    )
+
+    val pointFrames = intArrayOf(
+        R.drawable.sheeda_point_0,
+        R.drawable.sheeda_point_1,
+        R.drawable.sheeda_point_2,
+        R.drawable.sheeda_point_3
+    )
+
     val dragFrame = R.drawable.sheeda_drag_0
     val fallFrame = R.drawable.sheeda_fall_0
     val onFloorFrame = R.drawable.sheeda_onfloor_0
@@ -91,6 +123,10 @@ object SheedaSkin {
             SheedaState.DRAG -> intArrayOf(dragFrame)
             SheedaState.FALL -> intArrayOf(fallFrame)
             SheedaState.ONFLOOR -> intArrayOf(onFloorFrame)
+            SheedaState.SCRATCH -> scratchFrames
+            SheedaState.CLEAN -> cleanFrames
+            SheedaState.WINK -> winkFrames
+            SheedaState.POINT -> pointFrames
         }
     }
 }

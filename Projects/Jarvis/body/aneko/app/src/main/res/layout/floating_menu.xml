@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="180dp"
+    android:layout_width="190dp"
     android:layout_height="wrap_content"
     android:background="@drawable/sheeda_bubble_bg"
     android:elevation="8dp"
@@ -34,7 +34,7 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Talk"
+        android:text="🎤 Talk to Sheeda"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
@@ -46,7 +46,7 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Today\'s Brief"
+        android:text="📋 Today's Brief"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
@@ -58,11 +58,35 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Inbox (0)"
+        android:text="📬 Inbox (0)"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
-    <!-- 4. Queue job -->
+    <!-- 4. Feline Trick / Gesture -->
+    <TextView
+        android:id="@+id/btn_menu_trick"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="🐾 Feline Trick"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 5. Loud Wake-up Alarm Test -->
+    <TextView
+        android:id="@+id/btn_menu_alarm"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="⏰ Loud Alarm Test"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 6. Queue job -->
     <TextView
         android:id="@+id/btn_menu_queue"
         android:layout_width="match_parent"
@@ -70,11 +94,11 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Queue Job"
+        android:text="⚡ Queue Task"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
-    <!-- 5. Mute -->
+    <!-- 7. Mute -->
     <TextView
         android:id="@+id/btn_menu_mute"
         android:layout_width="match_parent"
@@ -82,11 +106,11 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Mute Audio"
+        android:text="🔇 Mute Audio"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
-    <!-- 6. Open Jarvis -->
+    <!-- 8. Open Jarvis -->
     <TextView
         android:id="@+id/btn_menu_open"
         android:layout_width="match_parent"
@@ -94,7 +118,7 @@
         android:background="?android:attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:text="Open Jarvis"
+        android:text="🌐 Open Jarvis Web"
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
