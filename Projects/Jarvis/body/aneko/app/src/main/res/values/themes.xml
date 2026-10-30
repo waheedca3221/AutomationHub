@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.Sheeda" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sheeda_orange</item>
+        <item name="colorPrimaryVariant">@color/sheeda_orange_dark</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:windowBackground">@color/bg_dark</item>
+    </style>
+</resources>
