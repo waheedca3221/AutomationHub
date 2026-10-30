@@ -61,8 +61,8 @@ class MainActivity : AppCompatActivity() {
         testAudioPlayer = SheedaAudioPlayer(
             context = this,
             client = client,
-            onSpeechStateChanged = {},
-            onSentenceSpoken = {}
+            onSpeechStateChanged = { _: Boolean -> },
+            onSentenceSpoken = { _: String -> }
         )
 
         btnOverlayPerm.setOnClickListener {

@@ -95,7 +95,7 @@ class SheedaOverlayService : Service() {
         audioPlayer = SheedaAudioPlayer(
             context = this,
             client = client,
-            onSpeechStateChanged = { speaking ->
+            onSpeechStateChanged = { speaking: Boolean ->
                 if (speaking) {
                     setState(SheedaState.SPEAKING)
                 } else {
@@ -104,7 +104,7 @@ class SheedaOverlayService : Service() {
                     }
                 }
             },
-            onSentenceSpoken = { sentence ->
+            onSentenceSpoken = { sentence: String ->
                 tvBubble.text = sentence
             }
         )
@@ -113,10 +113,10 @@ class SheedaOverlayService : Service() {
             context = this,
             windowManager = windowManager,
             client = client,
-            onBubbleMessage = { msg, isUserTalk ->
+            onBubbleMessage = { msg: String, isUserTalk: Boolean ->
                 showSpeechBubble(msg, isUserTalk = isUserTalk)
             },
-            onStateChange = { newState -> setState(newState) },
+            onStateChange = { newState: SheedaState -> setState(newState) },
             onTalkRequested = { startSpeechListening() }
         )
 
@@ -317,7 +317,7 @@ class SheedaOverlayService : Service() {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-                putExtra(RecognizerIntent.EXTRA_ADDITIONAL_LANGUAGES, arrayOf("ur-PK", "ur", "en-PK"))
+                putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("ur-PK", "ur", "en-PK"))
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
