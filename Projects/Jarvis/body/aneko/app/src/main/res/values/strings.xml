@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Sheeda Floating Companion</string>
+    <string name="sheeda_desc">Realistic orange tabby floating companion powered by Jarvis :8777</string>
+    <string name="btn_overlay_perm">Grant Overlay Permission</string>
+    <string name="btn_mic_perm">Grant Microphone Permission</string>
+    <string name="btn_start_sheeda">Spawn Floating Sheeda</string>
+    <string name="btn_stop_sheeda">Dismiss Sheeda</string>
+    <string name="status_running">Sheeda is floating on your screen</string>
+    <string name="status_stopped">Sheeda is resting</string>
+    <string name="menu_talk">Talk</string>
+    <string name="menu_brief">Today\'s Brief</string>
+    <string name="menu_inbox">Inbox</string>
+    <string name="menu_queue">Queue Job</string>
+    <string name="menu_mute">Mute</string>
+    <string name="menu_open">Open Jarvis</string>
+</resources>
