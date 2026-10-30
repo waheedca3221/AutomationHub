@@ -1,0 +1,11 @@
+<resources>
+    <color name="sheeda_orange">#E27A2A</color>
+    <color name="sheeda_orange_dark">#B85212</color>
+    <color name="sheeda_cream">#FCF0DC</color>
+    <color name="sheeda_amber">#F2A80F</color>
+    <color name="bg_dark">#12141A</color>
+    <color name="bg_surface">#1A1D24</color>
+    <color name="bg_card">#222630</color>
+    <color name="text_primary">#F0F2F5</color>
+    <color name="text_secondary">#9CA3AF</color>
+</resources>
