@@ -10,11 +10,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.RecognitionListener
@@ -33,6 +38,8 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -40,6 +47,18 @@ class SheedaOverlayService : Service() {
 
     companion object {
         private const val TAG = "SheedaOverlay"
+        private const val CHANNEL_ID = "sheeda_overlay_channel"
+        private const val NOTIFICATION_ID = 1001
+
+        fun isReminderQuery(text: String): Boolean {
+            val low = text.lowercase().trim()
+            val reminderTriggers = listOf(
+                "remind", "reminder", "snooze", "cancel", "what are my reminders",
+                "list reminders", "show reminders", "check reminders"
+            )
+            if (reminderTriggers.any { low.contains(it) }) return true
+            return Regex("^(in\\s+\\d+|tomorrow\\s+morning|at\\s+\\d+|every\\s+weekday)").containsMatchIn(low)
+        }
     }
 
     private lateinit var windowManager: WindowManager
@@ -58,7 +77,8 @@ class SheedaOverlayService : Service() {
     private var currentState = SheedaState.IDLE
     private var currentFrameIdx = 0
     private val handler = Handler(Looper.getMainLooper())
-    private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    private val serviceJob = Job()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
 
     private var initialX = 0
     private var initialY = 0
@@ -68,6 +88,10 @@ class SheedaOverlayService : Service() {
     private var hasLongClicked = false
 
     private lateinit var windowParams: WindowManager.LayoutParams
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var presenceJob: Job? = null
 
     private val longPressRunnable = Runnable {
         if (!isDragging) {
@@ -91,6 +115,9 @@ class SheedaOverlayService : Service() {
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         client = JarvisTailnetClient(this)
+
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "sheeda:presence_event")
 
         audioPlayer = SheedaAudioPlayer(
             context = this,
@@ -122,17 +149,26 @@ class SheedaOverlayService : Service() {
 
         initOverlayView()
         handler.post(animationRunnable)
+
+        // Register Network Callback to survive network switches (Tailscale / Wi-Fi / LTE)
+        setupNetworkObserver()
+
+        // 1. Start presence long-poll receiver loop for reminders and briefs
+        startPresencePollingLoop()
+
+        // 4. Check for self-update on start or daily
+        SheedaUpdater.checkOnStartOrDaily(this, client)
     }
 
     private fun startForegroundNotification() {
-        val channelId = "sheeda_overlay_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
+                CHANNEL_ID,
                 "Sheeda Floating Companion",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Foreground floating screen pet overlay"
+                setShowBadge(false)
             }
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
@@ -144,15 +180,91 @@ class SheedaOverlayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Sheeda is Active")
-            .setContentText("Tap cat to Talk aloud • Long-press for menu")
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Sheeda is here")
+            .setContentText("Tap cat to talk • Long-press for menu")
             .setSmallIcon(R.drawable.sheeda_stand_0)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(1001, notification)
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
+    private fun setupNetworkObserver() {
+        try {
+            connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.i(TAG, "Network restored. Triggering immediate presence poll check.")
+                    startPresencePollingLoop()
+                }
+            }
+            connectivityManager?.registerNetworkCallback(request, networkCallback!!)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register network observer: $e")
+        }
+    }
+
+    /**
+     * Long-poll presence client for :8777/api/presence/poll.
+     * Reconnects with back-off; handles incoming reminders and briefs, speaks aloud, and acks back to PC.
+     */
+    private fun startPresencePollingLoop() {
+        presenceJob?.cancel()
+        presenceJob = serviceScope.launch(Dispatchers.IO) {
+            var backoffMs = 2000L
+
+            while (isActive) {
+                try {
+                    val pollResult = client.pollPresenceEvents(timeoutSeconds = 15)
+
+                    if (pollResult.isSuccess) {
+                        backoffMs = 2000L // Reset back-off on successful connection
+                        val events = pollResult.getOrNull() ?: emptyList()
+
+                        if (events.isNotEmpty()) {
+                            // Hold partial wake lock so phone CPU stays alive while displaying and speaking
+                            try {
+                                wakeLock?.acquire(15000L)
+                            } catch (_: Exception) {}
+
+                            for (evt in events) {
+                                Log.i(TAG, "Received presence event from PC: id=${evt.id} type=${evt.type} text=${evt.text}")
+                                if (evt.text.isNotBlank()) {
+                                    handler.post {
+                                        // Display bubble and speak via SheedaAudioPlayer (uses /api/tts with on-device fallback)
+                                        showSpeechBubble(evt.text, durationMs = 7000, isUserTalk = true)
+                                    }
+
+                                    // Acknowledge back to PC so 10-minute repeat / escalation watchdog is informed
+                                    val ackRes = client.acknowledgeEvent(evt.id)
+                                    Log.i(TAG, "Ack sent for event ${evt.id}: success=${ackRes.isSuccess}")
+                                }
+                            }
+
+                            try {
+                                if (wakeLock?.isHeld == true) wakeLock?.release()
+                            } catch (_: Exception) {}
+                        }
+                    } else {
+                        // Connection failed (PC asleep, Tailnet reconnecting, or offline)
+                        Log.w(TAG, "Presence poll error: ${pollResult.exceptionOrNull()?.message}; backing off ${backoffMs}ms")
+                        delay(backoffMs)
+                        backoffMs = (backoffMs * 2).coerceAtMost(30000L)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Presence loop exception: $e; backing off ${backoffMs}ms")
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(30000L)
+                }
+            }
+        }
     }
 
     private fun initOverlayView() {
@@ -340,12 +452,26 @@ class SheedaOverlayService : Service() {
         speechRecognizer = null
     }
 
+    /**
+     * Handles user speech turn.
+     * If text is a reminder query ("remind me...", "in 20 minutes...", "snooze...", "cancel..."),
+     * routes through Phase 10B reminder engine with origin='phone'.
+     */
     private fun handleUserVoiceTurn(userText: String) {
         setState(SheedaState.THINKING)
         serviceScope.launch {
-            val result = client.sendChatCompletion(userText)
-            val reply = result.getOrElse {
-                "Meow! Could not connect to Jarvis brain on tailnet."
+            val reply: String
+            if (isReminderQuery(userText)) {
+                Log.i(TAG, "Routing phone voice reminder through 10B engine: $userText")
+                val remResult = client.sendReminderVoice(userText)
+                reply = remResult.getOrElse {
+                    "Reminder received, but could not confirm with PC brain."
+                }
+            } else {
+                val chatResult = client.sendChatCompletion(userText)
+                reply = chatResult.getOrElse {
+                    "Meow! Could not connect to Jarvis brain on tailnet."
+                }
             }
 
             val latencyMs = System.currentTimeMillis() - speechEndTime
@@ -428,6 +554,16 @@ class SheedaOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        presenceJob?.cancel()
+        serviceJob.cancel()
+        try {
+            if (networkCallback != null && connectivityManager != null) {
+                connectivityManager?.unregisterNetworkCallback(networkCallback!!)
+            }
+        } catch (_: Exception) {}
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
         handler.removeCallbacks(animationRunnable)
         handler.removeCallbacks(longPressRunnable)
         stopSpeechListening()

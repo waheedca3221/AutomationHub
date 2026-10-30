@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.Button
@@ -27,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnToggle: Button
     private lateinit var btnOverlayPerm: Button
     private lateinit var btnMicPerm: Button
+    private lateinit var btnBatteryOpt: Button
     private lateinit var btnTestVoice: Button
 
     private lateinit var client: JarvisTailnetClient
@@ -56,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         btnToggle = findViewById(R.id.btn_toggle_sheeda)
         btnOverlayPerm = findViewById(R.id.btn_overlay_perm)
         btnMicPerm = findViewById(R.id.btn_mic_perm)
+        btnBatteryOpt = findViewById(R.id.btn_battery_opt)
         btnTestVoice = findViewById(R.id.btn_test_voice)
 
         testAudioPlayer = SheedaAudioPlayer(
@@ -83,6 +86,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Microphone permission is already granted!", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        btnBatteryOpt.setOnClickListener {
+            requestIgnoreBatteryOptimization()
         }
 
         btnTestVoice.setOnClickListener {
@@ -119,6 +126,35 @@ class MainActivity : AppCompatActivity() {
 
         inspectTtsEngines()
         checkTailnetHealth()
+
+        // Auto-prompt battery optimization dialog if not yet ignored
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            if (pm?.isIgnoringBatteryOptimizations(packageName) == false) {
+                requestIgnoreBatteryOptimization()
+            }
+        }
+
+        // Check for app updates
+        SheedaUpdater.checkOnStartOrDaily(this, client)
+    }
+
+    private fun requestIgnoreBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            if (pm?.isIgnoringBatteryOptimizations(packageName) == false) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Open Battery Settings -> Ignore Optimization", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Battery optimization already ignored (Sheeda stays alive).", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onResume() {
@@ -130,11 +166,17 @@ class MainActivity : AppCompatActivity() {
         val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
         val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+        val pm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) getSystemService(Context.POWER_SERVICE) as? PowerManager else null
+        val ignoresBattery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pm?.isIgnoringBatteryOptimizations(packageName) == true else true
+
         btnOverlayPerm.text = if (hasOverlay) "✓ Display Over Other Apps (Granted)" else "1. Grant Display Over Other Apps"
         btnOverlayPerm.isEnabled = !hasOverlay
 
         btnMicPerm.text = if (hasMic) "✓ Microphone Access (Granted)" else "2. Grant Microphone Permission"
         btnMicPerm.isEnabled = !hasMic
+
+        btnBatteryOpt.text = if (ignoresBattery) "✓ Ignore Battery Optimisation (Stay Alive Active)" else "3. Ignore Battery Optimisation (Stay Alive)"
+        btnBatteryOpt.isEnabled = !ignoresBattery
     }
 
     private fun inspectTtsEngines() {
