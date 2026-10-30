@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="180dp"
+    android:layout_height="wrap_content"
+    android:background="@drawable/sheeda_bubble_bg"
+    android:elevation="8dp"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <!-- Header -->
+    <TextView
+        android:id="@+id/tv_menu_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="6dp"
+        android:text="Sheeda • Jarvis :8777"
+        android:textColor="@color/sheeda_orange"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginBottom="4dp"
+        android:background="#33FFFFFF" />
+
+    <!-- 1. Talk -->
+    <TextView
+        android:id="@+id/btn_menu_talk"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Talk"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 2. Today's brief -->
+    <TextView
+        android:id="@+id/btn_menu_brief"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Today\'s Brief"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 3. Inbox N -->
+    <TextView
+        android:id="@+id/btn_menu_inbox"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Inbox (0)"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 4. Queue job -->
+    <TextView
+        android:id="@+id/btn_menu_queue"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Queue Job"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 5. Mute -->
+    <TextView
+        android:id="@+id/btn_menu_mute"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Mute Audio"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+    <!-- 6. Open Jarvis -->
+    <TextView
+        android:id="@+id/btn_menu_open"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="Open Jarvis"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
+</LinearLayout>
