@@ -153,7 +153,8 @@ class SheedaOverlayService : Service() {
                 showSpeechBubble(msg, isUserTalk = isUserTalk)
             },
             onStateChange = { newState: SheedaState -> setState(newState) },
-            onTalkRequested = { startSpeechListening() }
+            onTalkRequested = { startSpeechListening() },
+            onResizeRequested = { cycleCatScale() }
         )
 
         initOverlayView()
@@ -282,6 +283,14 @@ class SheedaOverlayService : Service() {
         ivSheeda = overlayView.findViewById(R.id.iv_sheeda_pet)
         tvBubble = overlayView.findViewById(R.id.tv_speech_bubble)
 
+        // Apply saved cat scale preference
+        val prefs = getSharedPreferences("sheeda_prefs", Context.MODE_PRIVATE)
+        val initialScale = prefs.getFloat("cat_scale", 1.0f)
+        val density = resources.displayMetrics.density
+        val basePx = (96 * density * initialScale).toInt()
+        ivSheeda.layoutParams.width = basePx
+        ivSheeda.layoutParams.height = basePx
+
         windowParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -352,6 +361,31 @@ class SheedaOverlayService : Service() {
                 vibrator?.vibrate(45)
             }
         } catch (_: Exception) {}
+    }
+
+    fun cycleCatScale(): Float {
+        val prefs = getSharedPreferences("sheeda_prefs", Context.MODE_PRIVATE)
+        val currentScale = prefs.getFloat("cat_scale", 1.0f)
+        val nextScale = when {
+            currentScale < 0.85f -> 1.0f      // Small -> Normal
+            currentScale < 1.15f -> 1.35f     // Normal -> Large
+            currentScale < 1.5f -> 1.65f      // Large -> Extra Large
+            else -> 0.75f                     // Extra Large -> Small
+        }
+        val density = resources.displayMetrics.density
+        val basePx = (96 * density * nextScale).toInt()
+        ivSheeda.layoutParams.width = basePx
+        ivSheeda.layoutParams.height = basePx
+        ivSheeda.requestLayout()
+        prefs.edit().putFloat("cat_scale", nextScale).apply()
+        val label = when {
+            nextScale < 0.85f -> "Small (72dp)"
+            nextScale < 1.15f -> "Normal (96dp)"
+            nextScale < 1.5f -> "Large (130dp)"
+            else -> "Extra Large (160dp)"
+        }
+        showSpeechBubble("Cat Size: $label", durationMs = 2500, skipAudio = true)
+        return nextScale
     }
 
     fun startSpeechListening() {

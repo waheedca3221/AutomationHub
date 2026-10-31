@@ -23,7 +23,8 @@ class SheedaMenuManager(
     private val client: JarvisTailnetClient,
     private val onBubbleMessage: (String, Boolean) -> Unit,
     private val onStateChange: (SheedaState) -> Unit,
-    private val onTalkRequested: () -> Unit
+    private val onTalkRequested: () -> Unit,
+    private val onResizeRequested: () -> Unit = {}
 ) {
     private var menuView: View? = null
     private var isMenuShowing = false
@@ -91,6 +92,12 @@ class SheedaMenuManager(
                 else -> "*meow*"
             }
             onBubbleMessage(msg, false)
+        }
+
+        // 4b. Resize Cat (Cycles Small, Normal, Large, Extra Large)
+        view.findViewById<View>(R.id.btn_menu_resize)?.setOnClickListener {
+            dismissMenu()
+            onResizeRequested()
         }
 
         // 5. Loud Wake-up Alarm Test

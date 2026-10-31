@@ -74,6 +74,18 @@
         android:textColor="@color/text_primary"
         android:textSize="13sp" />
 
+    <!-- 4b. Resize Cat -->
+    <TextView
+        android:id="@+id/btn_menu_resize"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:text="📐 Resize Cat"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp" />
+
     <!-- 5. Loud Wake-up Alarm Test -->
     <TextView
         android:id="@+id/btn_menu_alarm"
